@@ -4,6 +4,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    # github = {
+    #   source  = "integrations/github"
+    #   version = "~> 5.0"
+    # }
   }
 
   backend "s3" {
@@ -14,9 +18,33 @@ terraform {
   }
 }
 
+# Securely pass GitHub Token
+# variable "github_token" {
+#   description = "The GitHub personal access token for authenticating Terraform with GitHub"
+#   type        = string
+#   sensitive   = true
+# }
+
 provider "aws" {
   region = "us-east-1"
 }
+
+# provider "github" {
+#   token = var.github_token
+#   owner = "davit90khachatryan"  # Ensure this matches your GitHub username
+# }
+# # GitHub Repository Module
+# resource "github_repository" "content_moderation_repo" {
+#   name        = "content-moderation-platform"
+#   description = "Terraform-managed repository for content moderation"
+#   visibility  = "private" # Change to "public" if needed
+
+#   auto_init = true # Initialize with a README
+# }
+
+# output "github_repo_url" {
+#   value = github_repository.content_moderation_repo.html_url
+# }
 
 # Lambda Module
 module "lambda" {
@@ -24,7 +52,6 @@ module "lambda" {
   sqs_queue_url       = module.sqs.queue_url         # Pass SQS queue URL
   dynamodb_table_name = module.dynamodb.table_name   # Pass DynamoDB table name
   s3_backend_bucket   = var.s3_backend_bucket        # Pass S3 bucket name
-  role_arn            = aws_iam_role.lambda_role.arn # Pass IAM Role ARN
 }
 
 # DynamoDB Module
@@ -39,10 +66,8 @@ module "sqs" {
 
 # API Gateway Module
 module "api_gateway" {
-  source = "./modules/api_gateway"
-
-  # Pass the Lambda ARN
-  lambda_invoke_arn = module.lambda.function_arn
+  source           = "./modules/api_gateway"
+  lambda_invoke_arn = module.lambda.function_invoke_arn
 }
 
 # Outputs for API Gateway and Lambda Function
@@ -54,66 +79,5 @@ output "lambda_function_name" {
   value = module.lambda.function_name
 }
 
-# IAM Role for Lambda
-resource "aws_iam_role" "lambda_role" {
-  name = "lambda-moderation-role"
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Principal = {
-          Service = "lambda.amazonaws.com"
-        }
-        Action = "sts:AssumeRole"
-      }
-    ]
-  })
-}
-
 # Data Source for Caller Identity
 data "aws_caller_identity" "current" {}
-
-# IAM Policy for Lambda
-resource "aws_iam_role_policy" "lambda_policy" {
-  name   = "lambda-policy"
-  role   = aws_iam_role.lambda_role.id
-
-  policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [
-      {
-        Effect = "Allow",
-        Action = [
-          "logs:CreateLogGroup",
-          "logs:CreateLogStream",
-          "logs:PutLogEvents"
-        ],
-        Resource = "arn:aws:logs:us-east-1:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/*"
-      },
-      {
-        Effect = "Allow",
-        Action = [
-          "dynamodb:PutItem",
-          "dynamodb:GetItem"
-        ],
-        Resource = "*"
-      },
-      {
-        Effect = "Allow",
-        Action = [
-          "s3:PutObject",
-          "s3:GetObject"
-        ],
-        Resource = "*"
-      },
-      {
-        Effect = "Allow",
-        Action = [
-          "sqs:SendMessage"
-        ],
-        Resource = "*"
-      }
-    ]
-  })
-}

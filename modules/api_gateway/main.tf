@@ -31,7 +31,7 @@ resource "aws_apigatewayv2_route" "moderate_route" {
 # Define the CloudWatch Log Group for API Gateway logs
 resource "aws_cloudwatch_log_group" "api_gateway_logs" {
   name              = "/aws/apigateway/content_moderation_api_logs"
-  retention_in_days = 7 # Retain logs for 7 days
+  retention_in_days = 7
 }
 
 # Define the deployment resource
@@ -50,7 +50,7 @@ resource "aws_apigatewayv2_deployment" "api_deployment" {
 # Define the stage resource
 resource "aws_apigatewayv2_stage" "default_stage" {
   api_id        = aws_apigatewayv2_api.content_moderation_api.id
-  name          = "default" # Replace with your desired stage name
+  name          = "default"
   auto_deploy   = true
 
   access_log_settings {

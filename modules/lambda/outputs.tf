@@ -1,5 +1,5 @@
-output "function_arn" {
-  value = aws_lambda_function.moderation_function.arn
+output "function_invoke_arn" {
+  value = aws_lambda_function.moderation_function.invoke_arn
 }
 
 output "function_name" {

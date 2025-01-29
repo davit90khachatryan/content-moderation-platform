@@ -9,10 +9,10 @@ variable "dynamodb_table_name" {
   type        = string
 }
 
-variable "role_arn" {
-  description = "IAM Role ARN for the Lambda function"
-  type        = string
-}
+# variable "role_arn" {
+#   description = "IAM Role ARN for the Lambda function"
+#   type        = string
+# }
 
 variable "s3_backend_bucket" {
   description = "S3 bucket for Lambda function code"
