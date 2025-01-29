@@ -4,10 +4,6 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
-    # github = {
-    #   source  = "integrations/github"
-    #   version = "~> 5.0"
-    # }
   }
 
   backend "s3" {
@@ -18,39 +14,19 @@ terraform {
   }
 }
 
-# Securely pass GitHub Token
-# variable "github_token" {
-#   description = "The GitHub personal access token for authenticating Terraform with GitHub"
-#   type        = string
-#   sensitive   = true
-# }
 
 provider "aws" {
   region = "us-east-1"
 }
 
-# provider "github" {
-#   token = var.github_token
-#   owner = "davit90khachatryan"  # Ensure this matches your GitHub username
-# }
-# # GitHub Repository Module
-# resource "github_repository" "content_moderation_repo" {
-#   name        = "content-moderation-platform"
-#   description = "Terraform-managed repository for content moderation"
-#   visibility  = "private" # Change to "public" if needed
-
-#   auto_init = true # Initialize with a README
-# }
-
-# output "github_repo_url" {
-#   value = github_repository.content_moderation_repo.html_url
-# }
-
 # Lambda Module
 module "lambda" {
   source              = "./modules/lambda"
+  sqs_queue_arn = module.sqs.queue_arn
   sqs_queue_url       = module.sqs.queue_url         # Pass SQS queue URL
   dynamodb_table_name = module.dynamodb.table_name   # Pass DynamoDB table name
+  # Pass the output from the dynamodb module to the lambda module
+  dynamodb_arn  = module.dynamodb.table_arn
   s3_backend_bucket   = var.s3_backend_bucket        # Pass S3 bucket name
 }
 
