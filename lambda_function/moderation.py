@@ -1,53 +1,85 @@
+import os
 import json
+import uuid
+from datetime import datetime
 
-# Predefined toxic keywords based on the dataset analysis
-TOXIC_KEYWORDS = [
-    "hate", "stupid", "idiot", "kill", "dumb", "trash", "moron", "racist", "bigot",
-    "loser", "dumbass", "jerk", "fool", "scum", "garbage", "nonsense", "terrorist",
-    "creep", "psychopath", "freak", "nazi", "dirtbag", "insane", "lunatic", "pathetic",
-    "selfish", "brainless", "ignorant", "foolish", "hopeless", "coward", "snake",
-    "toxic", "degenerate", "liar", "worthless", "miserable", "horrible"
-]
+import boto3
+import nltk
+from nltk.sentiment import SentimentIntensityAnalyzer
 
+# Let NLTK find the VADER data in the Lambda layer
+nltk.data.path.append("/opt/python/nltk_data")
 
-def classify_comment(comment):
-    """
-    Simple toxicity detection based on keyword matching.
-    """
-    comment_lower = comment.lower()
-    for keyword in TOXIC_KEYWORDS:
-        if keyword in comment_lower:
-            return "BLOCK"
-    return "OK"
+TABLE_NAME = os.environ.get("TABLE_NAME")  # e.g. "FlaggedContent"
+SQS_QUEUE_URL = os.environ.get("SQS_QUEUE_URL")
+
+dynamodb = boto3.resource("dynamodb")
+table = dynamodb.Table(TABLE_NAME)
+
+sqs = boto3.client("sqs")
 
 def handler(event, context):
-    """
-    AWS Lambda handler function.
-    Processes input from API Gateway and returns moderation results.
-    """
     try:
-        # Parse the incoming request
         body = json.loads(event["body"])
-        comment = body.get("text", None)
-        
+        comment = body.get("text", "")
+
         if not comment:
             return {
                 "statusCode": 400,
-                "body": json.dumps({"error": "Missing 'text' field in request body"})
+                "body": json.dumps({"error": "Missing 'text' field"})
             }
 
-        # Classify the comment
-        prediction = classify_comment(comment)
+        # VADER sentiment
+        sia = SentimentIntensityAnalyzer()
+        scores = sia.polarity_scores(comment)
+        compound = scores["compound"]
 
-        # Prepare the response
-        response = {
-            "comment": comment,
-            "decision": prediction
-        }
+        # Simple thresholds:
+        #   - compound >=  0.0 => OK
+        #   - -0.5 <= comp < 0 => FLAGGED
+        #   - comp <  -0.5     => BLOCK
+        if compound >= 0:
+            decision = "OK"
+        elif compound >= -0.5:
+            decision = "FLAGGED"
+        else:
+            decision = "BLOCK"
+
+        # If decision is FLAGGED or BLOCK, store in DynamoDB + push to SQS
+        if decision in ("FLAGGED", "BLOCK"):
+            comment_id = str(uuid.uuid4())
+            timestamp = datetime.utcnow().isoformat()
+
+            table.put_item(
+                Item={
+                    "comment_id": comment_id,
+                    "comment_text": comment,
+                    "decision": decision,
+                    "scores": json.dumps(scores),
+                    "timestamp": timestamp
+                }
+            )
+
+            # Optional: push to SQS
+            if SQS_QUEUE_URL:
+                sqs.send_message(
+                    QueueUrl=SQS_QUEUE_URL,
+                    MessageBody=json.dumps({
+                        "comment_id": comment_id,
+                        "comment_text": comment,
+                        "decision": decision,
+                        "scores": scores,
+                        "timestamp": timestamp
+                    })
+                )
 
         return {
             "statusCode": 200,
-            "body": json.dumps(response)
+            "body": json.dumps({
+                "comment": comment,
+                "decision": decision,
+                "scores": scores
+            })
         }
 
     except Exception as e:
