@@ -39,18 +39,28 @@ resource "aws_iam_role_policy" "lambda_policy" {
         Action = [
           "dynamodb:PutItem",
           "dynamodb:UpdateItem"
-          # "dynamodb:GetItem" if needed, etc.
         ],
         Resource = "arn:aws:dynamodb:us-east-1:039612865454:table/FlaggedContent"
       },
-
-      # 2) SQS permissions
+      
+      # 2) SQS permissions: Allow Lambda to read messages from SQS
+      {
+          "Effect": "Allow",
+          "Action": [
+              "sqs:SendMessage",
+              "sqs:ReceiveMessage",
+              "sqs:DeleteMessage",
+              "sqs:GetQueueAttributes"
+          ],
+          "Resource": "arn:aws:sqs:us-east-1:039612865454:FlaggedContentQueue"
+      },
+      # Permission for `moderation_review_function` to read messages
       {
         Effect = "Allow",
         Action = [
-          "sqs:SendMessage"
+          "lambda:InvokeFunction"
         ],
-        Resource = var.sqs_queue_arn
+        Resource = aws_lambda_function.moderation_review_function.arn
       }
     ]
   })
@@ -89,6 +99,32 @@ resource "aws_lambda_function" "moderation_function" {
   memory_size = 512
 }
 
+
+# Moderation Review Function (Second Lambda)
+resource "aws_lambda_function" "moderation_review_function" {
+  function_name = "moderation-review-function"
+  runtime       = "python3.9"
+  handler       = "lambda_moderation_function.moderation_review.handler"
+  role          = aws_iam_role.lambda_role.arn
+  filename      = "${path.root}/moderation_review_function.zip"
+
+  environment {
+    variables = {
+      TABLE_NAME = var.dynamodb_table_name
+    }
+  }
+
+  timeout     = 10
+  memory_size = 128
+}
+
+# SQS Event Source Mapping for the Review Function
+resource "aws_lambda_event_source_mapping" "sqs_trigger" {
+  event_source_arn = var.sqs_queue_arn
+  function_name    = aws_lambda_function.moderation_review_function.arn
+  batch_size       = 10   # Number of messages processed per function execution
+  enabled          = true
+}
 
 # Allow API Gateway to Invoke the Lambda
 resource "aws_lambda_permission" "apigateway_invoke" {

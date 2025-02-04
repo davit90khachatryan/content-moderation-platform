@@ -4,3 +4,4 @@
 .terraform.lock.hcl
 crash.log
 terraform.tfvars
+venv
